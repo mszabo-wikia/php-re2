@@ -7,8 +7,10 @@
 
 #include "LRUPatternCache.h"
 #include "Zend/zend_exceptions.h"
+#include "php_ini.h"
 #include "zend_API.h"
 #include "zend_hash.h"
+#include "zend_ini.h"
 #include "zend_portability.h"
 #include "zend_types.h"
 #ifdef HAVE_CONFIG_H
@@ -62,6 +64,7 @@ static void re2_pattern_free(zend_object* obj) {
 
 ZEND_BEGIN_MODULE_GLOBALS(re2)
 std::unique_ptr<RE2PHP::LRUPatternCache> pattern_cache;
+zend_ulong max_pattern_cache_size;
 ZEND_END_MODULE_GLOBALS(re2)
 
 ZEND_DECLARE_MODULE_GLOBALS(re2)
@@ -173,6 +176,21 @@ PHP_RINIT_FUNCTION(re2) {
   return SUCCESS;
 }
 
+ZEND_INI_MH(OnUpdateRE2MaxPatternCacheSize) {
+  auto result =
+      OnUpdateLongGEZero(entry, new_value, mh_arg1, mh_arg2, mh_arg3, stage);
+  if (result == SUCCESS && RE2_G(pattern_cache).get() != nullptr) {
+    RE2_G(pattern_cache)->resize(RE2_G(max_pattern_cache_size));
+  }
+  return result;
+}
+
+PHP_INI_BEGIN()
+STD_PHP_INI_ENTRY("re2.max_pattern_cache_size", "0", PHP_INI_ALL,
+                  OnUpdateRE2MaxPatternCacheSize, max_pattern_cache_size,
+                  zend_re2_globals, re2_globals)
+PHP_INI_END()
+
 PHP_MINIT_FUNCTION(re2) {
   re2_pattern_ce = register_class_RE2_Pattern();
   re2_pattern_ce->create_object = re2_pattern_create;
@@ -182,7 +200,10 @@ PHP_MINIT_FUNCTION(re2) {
   re2_pattern_handlers.offset = XtOffsetOf(re2_pattern_t, std);
   re2_pattern_handlers.free_obj = re2_pattern_free;
 
-  RE2_G(pattern_cache) = std::make_unique<RE2PHP::LRUPatternCache>(256);
+  REGISTER_INI_ENTRIES();
+
+  RE2_G(pattern_cache) =
+      std::make_unique<RE2PHP::LRUPatternCache>(RE2_G(max_pattern_cache_size));
 
   return SUCCESS;
 }
@@ -191,6 +212,8 @@ PHP_MINFO_FUNCTION(re2) {
   php_info_print_table_start();
   php_info_print_table_row(2, "re2 support", "enabled");
   php_info_print_table_end();
+
+  DISPLAY_INI_ENTRIES();
 }
 
 zend_module_entry re2_module_entry = {

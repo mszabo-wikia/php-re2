@@ -17,6 +17,8 @@ class LRUPatternCache {
 
   std::optional<std::shared_ptr<RE2>> get(const std::string_view& pattern);
 
+  void resize(std::size_t new_size);
+
   std::size_t size() const noexcept { return cache.size(); }
 
   void emplace(std::shared_ptr<RE2> re2);
