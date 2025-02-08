@@ -39,11 +39,16 @@ constexpr static std::string_view kRE2ExceptionFormatString =
 static zend_class_entry* re2_pattern_ce;
 static zend_object_handlers re2_pattern_handlers;
 
+// Offset of the zend_object field in the backing struct
+// of an RE2\Pattern object.
+constexpr static zend_ulong kRE2PatternStdOffset =
+    XtOffsetOf(re2_pattern_t, std);
+
 // Convenience function to retrieve the backing struct of an RE2\Pattern object.
 static zend_always_inline re2_pattern_t* re2_pattern_from_obj(
     zend_object* obj) {
   return reinterpret_cast<re2_pattern_t*>(reinterpret_cast<char*>(obj) -
-                                          XtOffsetOf(re2_pattern_t, std));
+                                          kRE2PatternStdOffset);
 }
 
 // Convenience function to retrieve the backing struct of an RE2\Pattern object
@@ -263,7 +268,7 @@ PHP_MINIT_FUNCTION(re2) {
 
   memcpy(&re2_pattern_handlers, &std_object_handlers,
          sizeof(zend_object_handlers));
-  re2_pattern_handlers.offset = XtOffsetOf(re2_pattern_t, std);
+  re2_pattern_handlers.offset = kRE2PatternStdOffset;
   re2_pattern_handlers.free_obj = re2_pattern_free;
 
   REGISTER_INI_ENTRIES();
