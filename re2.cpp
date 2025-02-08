@@ -1,5 +1,6 @@
 #include "php.h"
 
+#include <exception>
 #include <memory>
 #include <re2/stringpiece.h>
 #include <string_view>
@@ -29,6 +30,13 @@
   ZEND_PARSE_PARAMETERS_START(0, 0)  \
   ZEND_PARSE_PARAMETERS_END()
 #endif
+
+/**
+ * Format string used when reporting internal C++ exceptions
+ * to the PHP userland.
+ */
+constexpr static std::string_view kRE2ExceptionFormatString =
+    "Internal RE2 error: %s";
 
 static zend_class_entry* re2_pattern_ce;
 static zend_object_handlers re2_pattern_handlers;
@@ -78,26 +86,37 @@ PHP_METHOD(RE2_Pattern, __construct) {
   Z_PARAM_STR(pattern)
   ZEND_PARSE_PARAMETERS_END();
 
-  const std::string_view pattern_sv{ZSTR_VAL(pattern), ZSTR_LEN(pattern)};
+  try {
+    const std::string_view pattern_sv{ZSTR_VAL(pattern), ZSTR_LEN(pattern)};
 
-  re2_pattern_t* intern = re2_pattern_from_zval(ZEND_THIS);
+    re2_pattern_t* intern = re2_pattern_from_zval(ZEND_THIS);
 
-  // Try to reuse an existing cached pattern if possible
-  if (auto cached_pattern = RE2_G(pattern_cache)->get(pattern_sv)) {
-    intern->re2 = *cached_pattern;
-    return;
-  }
+    // Try to reuse an existing cached pattern if possible
+    if (auto cached_pattern = RE2_G(pattern_cache)->get(pattern_sv)) {
+      intern->re2 = *cached_pattern;
+      return;
+    }
 
-  std::shared_ptr<RE2> re2 = std::make_shared<RE2>(pattern_sv, RE2::Quiet);
+    std::shared_ptr<RE2> re2 = std::make_shared<RE2>(pattern_sv, RE2::Quiet);
 
-  if (!re2->ok()) {
-    zend_throw_exception_ex(zend_ce_value_error, 0, "%s", re2->error().c_str());
+    if (!re2->ok()) {
+      zend_throw_exception_ex(zend_ce_value_error, 0, "%s",
+                              re2->error().c_str());
+      RETURN_THROWS();
+    }
+
+    RE2_G(pattern_cache)->emplace(re2);
+
+    intern->re2 = re2;
+  } catch (const std::exception& e) {
+    zend_throw_exception_ex(zend_ce_error_exception, 0,
+                            kRE2ExceptionFormatString.data(), e.what());
+    RETURN_THROWS();
+  } catch (...) {
+    zend_throw_exception_ex(zend_ce_error_exception, 0,
+                            kRE2ExceptionFormatString.data(), "unknown error");
     RETURN_THROWS();
   }
-
-  RE2_G(pattern_cache)->emplace(re2);
-
-  intern->re2 = re2;
 }
 
 PHP_METHOD(RE2_Pattern, matches) {
@@ -109,7 +128,17 @@ PHP_METHOD(RE2_Pattern, matches) {
 
   re2_pattern_t* intern = re2_pattern_from_zval(ZEND_THIS);
 
-  RETURN_BOOL(RE2::PartialMatch(ZSTR_VAL(subject), *intern->re2));
+  try {
+    RETURN_BOOL(RE2::PartialMatch(ZSTR_VAL(subject), *intern->re2));
+  } catch (const std::exception& e) {
+    zend_throw_exception_ex(zend_ce_error_exception, 0,
+                            kRE2ExceptionFormatString.data(), e.what());
+    RETURN_THROWS();
+  } catch (...) {
+    zend_throw_exception_ex(zend_ce_error_exception, 0,
+                            kRE2ExceptionFormatString.data(), "unknown error");
+    RETURN_THROWS();
+  }
 }
 
 PHP_METHOD(RE2_Pattern, captures) {
@@ -121,33 +150,43 @@ PHP_METHOD(RE2_Pattern, captures) {
 
   re2_pattern_t* intern = re2_pattern_from_zval(ZEND_THIS);
 
-  std::size_t capture_count = intern->re2->NumberOfCapturingGroups() + 1;
+  try {
+    std::size_t capture_count = intern->re2->NumberOfCapturingGroups() + 1;
 
-  std::vector<re2::StringPiece> submatches{capture_count};
+    std::vector<re2::StringPiece> submatches{capture_count};
 
-  bool matched = intern->re2->Match(ZSTR_VAL(subject), 0, ZSTR_LEN(subject),
-                                    RE2::Anchor::UNANCHORED, submatches.data(),
-                                    capture_count);
+    bool matched = intern->re2->Match(ZSTR_VAL(subject), 0, ZSTR_LEN(subject),
+                                      RE2::Anchor::UNANCHORED,
+                                      submatches.data(), capture_count);
 
-  if (!matched) {
-    RETURN_EMPTY_ARRAY();
-  }
-
-  HashTable* captures = zend_new_array(capture_count);
-
-  for (const auto& submatch : submatches) {
-    zval zv;
-
-    if (submatch.empty()) {
-      ZVAL_NULL(&zv);
-    } else {
-      ZVAL_STRINGL(&zv, submatch.data(), submatch.size());
+    if (!matched) {
+      RETURN_EMPTY_ARRAY();
     }
 
-    zend_hash_next_index_insert(captures, &zv);
-  }
+    HashTable* captures = zend_new_array(capture_count);
 
-  RETURN_ARR(captures);
+    for (const auto& submatch : submatches) {
+      zval zv;
+
+      if (submatch.empty()) {
+        ZVAL_NULL(&zv);
+      } else {
+        ZVAL_STRINGL(&zv, submatch.data(), submatch.size());
+      }
+
+      zend_hash_next_index_insert(captures, &zv);
+    }
+
+    RETURN_ARR(captures);
+  } catch (const std::exception& e) {
+    zend_throw_exception_ex(zend_ce_error_exception, 0,
+                            kRE2ExceptionFormatString.data(), e.what());
+    RETURN_THROWS();
+  } catch (...) {
+    zend_throw_exception_ex(zend_ce_error_exception, 0,
+                            kRE2ExceptionFormatString.data(), "unknown error");
+    RETURN_THROWS();
+  }
 }
 
 PHP_METHOD(RE2_Pattern, quote) {
@@ -163,9 +202,19 @@ PHP_METHOD(RE2_Pattern, quote) {
     RETURN_EMPTY_STRING();
   }
 
-  std::string quoted = RE2::QuoteMeta(text_sv);
+  try {
+    std::string quoted = RE2::QuoteMeta(text_sv);
 
-  RETURN_STRINGL(quoted.c_str(), quoted.size());
+    RETURN_STRINGL(quoted.c_str(), quoted.size());
+  } catch (const std::exception& e) {
+    zend_throw_exception_ex(zend_ce_error_exception, 0,
+                            kRE2ExceptionFormatString.data(), e.what());
+    RETURN_THROWS();
+  } catch (...) {
+    zend_throw_exception_ex(zend_ce_error_exception, 0,
+                            kRE2ExceptionFormatString.data(), "unknown error");
+    RETURN_THROWS();
+  }
 }
 
 PHP_RINIT_FUNCTION(re2) {
@@ -179,8 +228,17 @@ PHP_RINIT_FUNCTION(re2) {
 ZEND_INI_MH(OnUpdateRE2MaxPatternCacheSize) {
   auto result =
       OnUpdateLongGEZero(entry, new_value, mh_arg1, mh_arg2, mh_arg3, stage);
+
   if (result == SUCCESS && RE2_G(pattern_cache).get() != nullptr) {
-    RE2_G(pattern_cache)->resize(RE2_G(max_pattern_cache_size));
+    try {
+      RE2_G(pattern_cache)->resize(RE2_G(max_pattern_cache_size));
+    } catch (const std::exception& e) {
+      php_error_docref(nullptr, E_WARNING, kRE2ExceptionFormatString.data(),
+                       e.what());
+    } catch (...) {
+      php_error_docref(nullptr, E_WARNING, kRE2ExceptionFormatString.data(),
+                       "unknown error");
+    }
   }
   return result;
 }
@@ -202,8 +260,16 @@ PHP_MINIT_FUNCTION(re2) {
 
   REGISTER_INI_ENTRIES();
 
-  RE2_G(pattern_cache) =
-      std::make_unique<RE2PHP::LRUPatternCache>(RE2_G(max_pattern_cache_size));
+  try {
+    RE2_G(pattern_cache) = std::make_unique<RE2PHP::LRUPatternCache>(
+        RE2_G(max_pattern_cache_size));
+  } catch (const std::exception& e) {
+    php_error_docref(nullptr, E_ERROR, kRE2ExceptionFormatString.data(),
+                     e.what());
+  } catch (...) {
+    php_error_docref(nullptr, E_ERROR, kRE2ExceptionFormatString.data(),
+                     "unknown error");
+  }
 
   return SUCCESS;
 }
