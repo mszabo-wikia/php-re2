@@ -1,0 +1,12 @@
+---
+BasedOnStyle: Google
+
+IncludeCategories:
+  - Regex:           '"php.h"'
+    Priority:        -1
+    SortPriority:    -1
+    CaseSensitive:   false
+  - Regex:           '^<.*'
+    Priority:        1
+  - Regex:           '.*'
+    Priority:        2

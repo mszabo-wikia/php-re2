@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-24.04
+    steps:
+        - name: Install dependencies
+          run: sudo apt update && sudo apt install -y libre2-dev clang-format
+        - name: Checkout code
+          uses: actions/checkout@v4
+        - name: Check formatting
+          run: clang-format -Werror -i *.cpp *.h
+        - name: Setup PHP
+          uses: shivammathur/setup-php@v2
+          with:
+            php-version: 8.1
+            coverage: none
+            tools: none
+        - name: Build extension
+          run: phpize && ./configure && make -j$(nproc)
+        - name: Test extension
+          run: make test TESTS="--show-diff tests"
