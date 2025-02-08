@@ -9,5 +9,7 @@ namespace RE2 {
         public function matches(string $text): bool {}
 
         public function captures(string $text): array {}
+
+        public static function quote(string $text): string {}
     }
 }

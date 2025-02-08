@@ -147,6 +147,24 @@ PHP_METHOD(RE2_Pattern, captures) {
   RETURN_ARR(captures);
 }
 
+PHP_METHOD(RE2_Pattern, quote) {
+  zend_string* text;
+
+  ZEND_PARSE_PARAMETERS_START(1, 1)
+  Z_PARAM_STR(text)
+  ZEND_PARSE_PARAMETERS_END();
+
+  std::string_view text_sv{ZSTR_VAL(text), ZSTR_LEN(text)};
+
+  if (text_sv.empty()) {
+    RETURN_EMPTY_STRING();
+  }
+
+  std::string quoted = RE2::QuoteMeta(text_sv);
+
+  RETURN_STRINGL(quoted.c_str(), quoted.size());
+}
+
 PHP_RINIT_FUNCTION(re2) {
 #if defined(ZTS) && defined(COMPILE_DL_RE2)
   ZEND_TSRMLS_CACHE_UPDATE();
