@@ -31,26 +31,28 @@
   ZEND_PARSE_PARAMETERS_END()
 #endif
 
-/**
- * Format string used when reporting internal C++ exceptions
- * to the PHP userland.
- */
+// Format string used when reporting internal C++ exceptions
+// to the PHP userland.
 constexpr static std::string_view kRE2ExceptionFormatString =
     "Internal RE2 error: %s";
 
 static zend_class_entry* re2_pattern_ce;
 static zend_object_handlers re2_pattern_handlers;
 
+// Convenience function to retrieve the backing struct of an RE2\Pattern object.
 static zend_always_inline re2_pattern_t* re2_pattern_from_obj(
     zend_object* obj) {
   return reinterpret_cast<re2_pattern_t*>(reinterpret_cast<char*>(obj) -
                                           XtOffsetOf(re2_pattern_t, std));
 }
 
+// Convenience function to retrieve the backing struct of an RE2\Pattern object
+// from its wrapping zval.
 static zend_always_inline re2_pattern_t* re2_pattern_from_zval(zval* zv) {
   return re2_pattern_from_obj(Z_OBJ_P(zv));
 }
 
+// Initialization function called by PHP when creating an RE2\Pattern object.
 static zend_object* re2_pattern_create(zend_class_entry* ce) {
   re2_pattern_t* intern = reinterpret_cast<re2_pattern_t*>(
       zend_object_alloc(sizeof(re2_pattern_t), ce));
@@ -63,6 +65,7 @@ static zend_object* re2_pattern_create(zend_class_entry* ce) {
   return &intern->std;
 }
 
+// Destructor function called by PHP when destroying an RE2\Pattern object.
 static void re2_pattern_free(zend_object* obj) {
   re2_pattern_t* intern = re2_pattern_from_obj(obj);
 
@@ -71,7 +74,9 @@ static void re2_pattern_free(zend_object* obj) {
 }
 
 ZEND_BEGIN_MODULE_GLOBALS(re2)
+// Per-module LRU cache of compiled RE2 patterns.
 std::unique_ptr<RE2PHP::LRUPatternCache> pattern_cache;
+// Maximum number of patterns to cache.
 zend_ulong max_pattern_cache_size;
 ZEND_END_MODULE_GLOBALS(re2)
 
@@ -226,6 +231,8 @@ PHP_RINIT_FUNCTION(re2) {
   return SUCCESS;
 }
 
+// INI validator called by PHP on initialization and when
+// re2.max_pattern_cache_size is updated via ini_set().
 ZEND_INI_MH(OnUpdateRE2MaxPatternCacheSize) {
   auto result =
       OnUpdateLongGEZero(entry, new_value, mh_arg1, mh_arg2, mh_arg3, stage);

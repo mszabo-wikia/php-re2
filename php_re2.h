@@ -17,7 +17,10 @@ extern zend_module_entry re2_module_entry;
 ZEND_TSRMLS_CACHE_EXTERN()
 #endif
 
+// Backing struct for RE2\Pattern objects.
 typedef struct {
+  // Pointer to a compiled RE2 pattern, which may be cached
+  // and used by multiple RE2\Pattern objects.
   std::shared_ptr<RE2> re2;
   zend_object std;
 } re2_pattern_t;

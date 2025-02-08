@@ -17,6 +17,11 @@ class LRUPatternCache {
 
   std::optional<std::shared_ptr<RE2>> get(const std::string_view& pattern);
 
+  // Resize the cache.
+  //
+  // If the new size is smaller than the current size,
+  // the least recently used patterns are evicted
+  // until the cache size is less than or equal to the new size.
   void resize(std::size_t new_size);
 
   std::size_t size() const noexcept { return cache.size(); }
@@ -40,13 +45,16 @@ class LRUPatternCache {
 
   struct CacheEntry {
     std::shared_ptr<RE2> re2;
-    // Iterator pointing to the key in the LRU access list.
+    // Iterator pointing to this pattern in the LRU access list.
     std::list<std::string>::iterator access_it;
   };
 
   std::unordered_map<std::string, CacheEntry, StringHash, std::equal_to<>>
       cache;
+
+  // LRU access list of pattern strings, head = most recently used.
   std::list<std::string> access;
+  // Maximum number of patterns to cache.
   std::size_t max_size;
 };
 }  // namespace RE2PHP
