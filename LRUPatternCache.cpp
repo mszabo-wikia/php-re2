@@ -32,7 +32,7 @@ void LRUPatternCache::emplace(std::shared_ptr<RE2> re2) {
   access.push_front(re2->pattern());
   cache.emplace(re2->pattern(), CacheEntry{re2, access.begin()});
 
-  if (cache.size() >= max_size) {
+  if (cache.size() > max_size) {
     auto last = access.back();
     cache.erase(last);
     access.pop_back();
