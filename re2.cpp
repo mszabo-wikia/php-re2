@@ -163,7 +163,8 @@ PHP_METHOD(RE2_Pattern, captures) {
       RETURN_EMPTY_ARRAY();
     }
 
-    HashTable* captures = zend_new_array(capture_count);
+    std::unique_ptr<HashTable, decltype(&zend_array_destroy)> captures{
+        zend_new_array(capture_count), &zend_array_destroy};
 
     for (const auto& submatch : submatches) {
       zval zv;
@@ -174,10 +175,10 @@ PHP_METHOD(RE2_Pattern, captures) {
         ZVAL_STRINGL(&zv, submatch.data(), submatch.size());
       }
 
-      zend_hash_next_index_insert(captures, &zv);
+      zend_hash_next_index_insert(captures.get(), &zv);
     }
 
-    RETURN_ARR(captures);
+    RETURN_ARR(captures.release());
   } catch (const std::exception& e) {
     zend_throw_exception_ex(zend_ce_error_exception, 0,
                             kRE2ExceptionFormatString.data(), e.what());
