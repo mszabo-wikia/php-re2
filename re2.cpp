@@ -12,6 +12,7 @@
 #include "zend_API.h"
 #include "zend_hash.h"
 #include "zend_ini.h"
+#include "zend_objects.h"
 #include "zend_portability.h"
 #include "zend_types.h"
 #ifdef HAVE_CONFIG_H
@@ -74,8 +75,9 @@ static zend_object* re2_pattern_create(zend_class_entry* ce) {
 static void re2_pattern_free(zend_object* obj) {
   re2_pattern_t* intern = re2_pattern_from_obj(obj);
 
-  // Reduce the refcount of the pattern held by this object.
-  std::shared_ptr<RE2> re2 = std::move(intern->re2);
+  intern->re2.reset();
+
+  zend_object_std_dtor(obj);
 }
 
 ZEND_BEGIN_MODULE_GLOBALS(re2)
